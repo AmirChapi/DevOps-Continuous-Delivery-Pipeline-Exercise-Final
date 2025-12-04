@@ -1,8 +1,4 @@
-// ==========================
-// Scripted Pipeline - Groovy
-// ==========================
 
-// Global Variables
 def dockerImage      = 'zip-job-test'
 def version          = '1.2.0'
 def repoTarget       = "binary-storage/${version}/"
@@ -11,17 +7,12 @@ def artifactoryCreds = 'artifactory-super-user'  // <-- לשים פה את ה-Cr
 
 node('built-in') {
 
-    // -------------------------
-    // Stage 1: Checkout
-    // -------------------------
     stage('Checkout') {
         checkout scm
         echo "Checked out repository into workspace."
     }
 
-    // -------------------------
-    // Stage 2: Build Docker Image
-    // -------------------------
+
     stage('Build Docker Image') {
         echo "Building Docker image: ${dockerImage}"
 
@@ -31,9 +22,7 @@ node('built-in') {
         """
     }
 
-    // -------------------------
-    // Stage 3: Run Python Script in Docker
-    // -------------------------
+
     stage('Run zip_job.py') {
         echo "Running Python script inside container..."
 
@@ -45,17 +34,13 @@ node('built-in') {
             ${dockerImage} python3 /tmp/zip_job.py
         """
 
-        // לוודא שה־ZIP נוצרו ב־workspace
         bat "dir *.zip"
     }
 
-    // -------------------------
-    // Stage 4: Upload Artifacts to Artifactory
-    // -------------------------
+
     stage('Publish Artifacts to Artifactory') {
         echo "Uploading artifacts to Artifactory..."
 
-        // יוצרים אובייקט שרת ישירות מה־URL ומה-Credentials
         def server = Artifactory.newServer(
             url: artifactoryUrl,
             credentialsId: artifactoryCreds
@@ -80,16 +65,11 @@ node('built-in') {
         server.publishBuildInfo(buildInfo)
     }
 
-    // -------------------------
-    // Stage 5: Cleanup
-    // -------------------------
+
     stage('Cleanup Workspace') {
         cleanWs()
     }
 
-    // -------------------------
-    // Stage 6: Email Report
-    // -------------------------
     stage('Report') {
         def status = currentBuild.currentResult ?: 'UNKNOWN'
 
