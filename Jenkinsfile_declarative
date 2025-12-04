@@ -1,0 +1,116 @@
+// Jenkinsfile_declarative - Declarative Pipeline for DevOps Exercise
+
+// הגדרות כלליות
+def ARTIFACTORY_SERVER_ID = 'artifactory-tlv'
+def ARTIFACTORY_CREDENTIAL_ID = 'artifactory-super-user'
+def ARTIFACT_REPO_NAME = 'binary-storage' // מאגר לארטיפקטים (הקובץ zip_job.py)
+def DOCKER_IMAGE_NAME = "zip-job-test"
+def DOCKER_TAG = "1.0.${BUILD_NUMBER}"
+def VERSION = '1.2.0'
+def PROJECT_DIRECTORY = 'Final_hw' // הנתיב לתיקייה המכילה את ה-Dockerfile וקבצים אחרים
+def REPO_TO_UPLOAD = "${ARTIFACT_REPO_NAME}/${VERSION}" // Artifactory repository to upload to
+def ARTIFACTORY_REGISTRY = "localhost:8081" // Artifactory Docker Registry URL
+def DOCKER_REPO_NAME = 'docker-virtual' // שם מאגר ה-Docker
+
+pipeline {
+    // 3a. Agent should be based on the Dockerfile you created in step 1
+    // i. it should run in a privileged mode with label zip-job-docker
+    agent {
+        docker {
+            image "${DOCKER_IMAGE_NAME}"
+            // העברת משתני סביבה ופרטים נדרשים
+            args "-u 0:0 --privileged -e VERSION=1.2.0 -l zip-job-docker"
+        }
+    }
+
+    // קביעת משתני סביבה לשימוש בשלבים
+    environment {
+        // הגדרת משתנים נוספים בתוך הסקריפט (אם נדרש)
+        MAIL_TO = 'your.email@example.com' // החלף לכתובת דוא"ל רלוונטית
+    }
+
+    // הגדרת פעולות שיקרו לאחר סיום ה-Pipeline (תמיד)
+    post {
+        // 3d. Report stage - send email with job status
+        always {
+            mail (
+                to: env.MAIL_TO,
+                subject: "Jenkins Job ${env.JOB_NAME} Build #${env.BUILD_NUMBER}: ${currentBuild.result}",
+                body: "The Pipeline ${env.JOB_NAME} finished with status ${currentBuild.result}."
+            )
+        }
+        // 3e. Cleanup stage - delete the workspace
+        cleanup {
+            deleteDir()
+        }
+    }
+
+    stages {
+        stage('Prepare Docker Image') {
+            agent any // מריץ את שלב הבנייה מחוץ לקונטיינר
+            steps {
+                echo "Building Docker image to serve as Agent..."
+                script {
+                    // שימוש בתיקון לנתיב ה-Dockerfile
+                    sh "docker build -t ${DOCKER_IMAGE_NAME} ./${PROJECT_DIRECTORY}"
+                }
+            }
+        }
+
+        stage('Build Stage') {
+            // 3b. Build stage should execute the zip_job.py
+            steps {
+                echo "Starting build stage: executing zip_job.py..."
+                // הפקודה מריצה את הסקריפט מתוך התיקייה Final_hw
+                sh "python3 ./${PROJECT_DIRECTORY}/zip_job.py"
+                echo "zip files created successfully in ${PROJECT_DIRECTORY}."
+            }
+        }
+
+        stage('Publish Artifacts to Artifactory') {
+            // 3c. Publish stage should upload all the zip files created
+            steps {
+                echo "Publishing artifacts to Artifactory at ${REPO_TO_UPLOAD}..."
+
+                script {
+                    def server = Artifactory.server ARTIFACTORY_SERVER_ID
+
+                    // 1. פרסום הארטיפקטים (קבצי ה-zip שנוצרו)
+                    def buildInfo = server.upload(
+                        repo: REPO_TO_UPLOAD,
+                        spec: """{
+                            "files": [
+                                {
+                                    "pattern": "${PROJECT_DIRECTORY}/*.zip", // מעלה את כל קבצי ה-zip שנוצרו
+                                    "target": "/"
+                                }
+                            ]
+                        }"""
+                    )
+
+                    // 2. פרסום מידע ה-Build
+                    buildInfo.env.capture = true
+                    server.publishBuildInfo buildInfo
+                }
+                echo "Artifacts successfully published."
+            }
+        }
+
+        stage('Tag and Push Docker Image') {
+            steps {
+                echo "Tagging and pushing Docker image to Artifactory..."
+                script {
+                    def finalTag = "${ARTIFACTORY_REGISTRY}/${DOCKER_REPO_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}"
+
+                    // 1. Tag
+                    sh "docker tag ${DOCKER_IMAGE_NAME} ${finalTag}"
+
+                    // 2. Login והעלאה (משתמש ב-Secret text שתוקן)
+                    docker.withRegistry("http://${ARTIFACTORY_REGISTRY}", ARTIFACTORY_CREDENTIAL_ID) {
+                        sh "docker push ${finalTag}"
+                    }
+                }
+            }
+        }
+    }
+}
