@@ -3,10 +3,11 @@
 // ==========================
 
 // Global Variables
-def dockerImage       = 'zip-job-test'
-def version           = '1.2.0'
-def repoTarget        = "binary-storage/${version}/"
-def artifactoryServer = "artifactory-tlv"
+def dockerImage      = 'zip-job-test'
+def version          = '1.2.0'
+def repoTarget       = "binary-storage/${version}/"
+def artifactoryUrl   = 'http://localhost:8081/artifactory'
+def artifactoryCreds = 'artifactory-super-user'  // <-- לשים פה את ה-Credentials ID האמיתי שלך
 
 node('built-in') {
 
@@ -44,39 +45,39 @@ node('built-in') {
             ${dockerImage} python3 /tmp/zip_job.py
         """
 
-        // לוודא שה-ZIP נוצרו ב-Workspace
+        // לוודא שה־ZIP נוצרו ב־workspace
         bat "dir *.zip"
     }
 
     // -------------------------
-    // Stage 4: Upload Artifacts
+    // Stage 4: Upload Artifacts to Artifactory
     // -------------------------
     stage('Publish Artifacts to Artifactory') {
         echo "Uploading artifacts to Artifactory..."
 
-        // שימוש ב-JFrog Platform (הפלגין החדש)
-        def jfrog       = JFrogPlatform.instance(artifactoryServer)
-        def artifactory = jfrog.artifactory()
+        // יוצרים אובייקט שרת ישירות מה־URL ומה-Credentials
+        def server = Artifactory.newServer(
+            url: artifactoryUrl,
+            credentialsId: artifactoryCreds
+        )
 
         def buildInfo = Artifactory.newBuildInfo()
         buildInfo.name   = env.JOB_NAME
         buildInfo.number = env.BUILD_NUMBER
 
-        def uploadSpec = """{
-            "files": [
-                {
-                    "pattern": "*.zip",
-                    "target": "${repoTarget}"
-                }
-            ]
-        }"""
-
-        artifactory.upload(
-            spec: uploadSpec,
+        server.upload(
+            spec: """{
+                "files": [
+                    {
+                        "pattern": "*.zip",
+                        "target": "${repoTarget}"
+                    }
+                ]
+            }""",
             buildInfo: buildInfo
         )
 
-        artifactory.publishBuildInfo(buildInfo)
+        server.publishBuildInfo(buildInfo)
     }
 
     // -------------------------
@@ -90,7 +91,7 @@ node('built-in') {
     // Stage 6: Email Report
     // -------------------------
     stage('Report') {
-        def status = currentBuild.currentResult
+        def status = currentBuild.currentResult ?: 'UNKNOWN'
 
         mail(
             to: 'amirmalka26@gmail.com',
