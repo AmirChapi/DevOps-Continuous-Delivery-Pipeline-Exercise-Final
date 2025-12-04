@@ -1,11 +1,11 @@
- // ==========================
+// ==========================
 // Scripted Pipeline - Groovy
 // ==========================
 
 // Global Variables
-def dockerImage = 'zip-job-test'
-def version = '1.2.0'
-def repoTarget = "binary-storage/${version}/"
+def dockerImage       = 'zip-job-test'
+def version           = '1.2.0'
+def repoTarget        = "binary-storage/${version}/"
 def artifactoryServer = "artifactory-tlv"
 
 node('built-in') {
@@ -44,6 +44,7 @@ node('built-in') {
             ${dockerImage} python3 /tmp/zip_job.py
         """
 
+        // לוודא שה-ZIP נוצרו ב-Workspace
         bat "dir *.zip"
     }
 
@@ -53,22 +54,29 @@ node('built-in') {
     stage('Publish Artifacts to Artifactory') {
         echo "Uploading artifacts to Artifactory..."
 
-        def server = Artifactory.server artifactoryServer
-        def buildInfo = Artifactory.newBuildInfo()
+        // שימוש ב-JFrog Platform (הפלגין החדש)
+        def jfrog       = JFrogPlatform.instance(artifactoryServer)
+        def artifactory = jfrog.artifactory()
 
-        server.upload(
-            spec: """{
-                "files": [
-                    {
-                        "pattern": "*.zip",
-                        "target": "${repoTarget}"
-                    }
-                ]
-            }""",
+        def buildInfo = Artifactory.newBuildInfo()
+        buildInfo.name   = env.JOB_NAME
+        buildInfo.number = env.BUILD_NUMBER
+
+        def uploadSpec = """{
+            "files": [
+                {
+                    "pattern": "*.zip",
+                    "target": "${repoTarget}"
+                }
+            ]
+        }"""
+
+        artifactory.upload(
+            spec: uploadSpec,
             buildInfo: buildInfo
         )
 
-        server.publishBuildInfo(buildInfo)
+        artifactory.publishBuildInfo(buildInfo)
     }
 
     // -------------------------
@@ -87,7 +95,8 @@ node('built-in') {
         mail(
             to: 'amirmalka26@gmail.com',
             subject: "Job ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${status}",
-            body: "Pipeline result: ${status}\nConsole: ${env.BUILD_URL}console"
+            body: """Pipeline result: ${status}
+Console: ${env.BUILD_URL}console"""
         )
     }
 }
