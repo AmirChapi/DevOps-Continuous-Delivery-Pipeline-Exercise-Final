@@ -5,7 +5,9 @@ pipeline {
     environment {
         VERSION            = '1.2.0'
         DOCKER_IMAGE       = 'zip-job-test'
-        ARTIFACTORY_SERVER = 'artifactory-tlv'
+
+        ARTIFACTORY_URL    = 'http://localhost:8081/artifactory'
+        ARTIFACTORY_CREDS  = 'artifactory-super-user'   // credentialsId כמו ב-scripted
         ARTIFACTORY_REPO   = 'binary-storage'
     }
 
@@ -50,8 +52,15 @@ pipeline {
             steps {
                 echo "Uploading artifacts to Artifactory..."
                 script {
-                    def server    = Artifactory.server(ARTIFACTORY_SERVER)
+                    // אותו סטאפ כמו ב-scripted
+                    def server = Artifactory.newServer(
+                        url: ARTIFACTORY_URL,
+                        credentialsId: ARTIFACTORY_CREDS
+                    )
+
                     def buildInfo = Artifactory.newBuildInfo()
+                    buildInfo.name   = env.JOB_NAME
+                    buildInfo.number = env.BUILD_NUMBER
 
                     server.upload(
                         spec: """{
@@ -79,7 +88,7 @@ pipeline {
         stage('Report') {
             steps {
                 script {
-                    def status = currentBuild.currentResult
+                    def status = currentBuild.currentResult ?: 'UNKNOWN'
                     mail(
                         to: 'amirmalka26@gmail.com',
                         subject: "Job ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${status}",
