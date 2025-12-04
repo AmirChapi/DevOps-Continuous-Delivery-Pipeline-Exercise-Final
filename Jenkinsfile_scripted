@@ -1,94 +1,93 @@
-// Jenkinsfile_scripted - Scripted Pipeline for DevOps Exercise
+ // ==========================
+// Scripted Pipeline - Groovy
+// ==========================
 
-// הגדרת משתני סביבה גלובליים
-// הגדרות Artifactory ותיקונים קודמים
-def ARTIFACTORY_SERVER_ID = 'artifactory-tlv' // Server ID שתצטרך להגדיר
-def ARTIFACTORY_CREDENTIAL_ID = 'artifactory-super-user' // ה-Secret text/Access Token
-def ARTIFACTORY_URL = 'http://localhost:8081/artifactory' // URL שתוקן
+// Global Variables
+def dockerImage = 'zip-job-test'
+def version = '1.2.0'
+def repoTarget = "binary-storage/${version}/"
+def artifactoryServer = "artifactory-tlv"
 
-// הגדרות הפרויקט
-def PROJECT_DIRECTORY = 'Final_hw' // הנתיב לתיקייה המכילה את ה-Dockerfile וקבצים אחרים
-def DOCKER_IMAGE_NAME = "zip-job-test"
-def DOCKER_TAG = "1.0.${BUILD_NUMBER}"
-def VERSION = '1.2.0' // המשתנה מוגדר גם ב-Dockerfile
+node('built-in') {
 
-// הגדרות Artifactory לפרסום
-def REPO_TO_UPLOAD = "binary-storage/${VERSION}" // 3c. Artifactory repository to upload to
-def ZIP_FILE_PATTERN = "${PROJECT_DIRECTORY}/*.zip" // יחפש את ה-zipים בתיקייה בה רץ הסקריפט
-
-node {
-    // שלב 0: בניית ה-Docker Image (כדי להשתמש בו כ-Agent)
-    stage('Prepare Docker Agent') {
-        echo "Building Docker image to serve as Agent..."
-        // שימוש בתיקון לנתיב ה-Dockerfile
-        bat "docker build -t ${DOCKER_IMAGE_NAME} ./${PROJECT_DIRECTORY}"
+    // -------------------------
+    // Stage 1: Checkout
+    // -------------------------
+    stage('Checkout') {
+        checkout scm
+        echo "Checked out repository into workspace."
     }
 
-    // 3a. Agent should be based on the Dockerfile you created in step 1
-    // i. it should run in a privileged mode with label zip-job-docker
+    // -------------------------
+    // Stage 2: Build Docker Image
+    // -------------------------
+    stage('Build Docker Image') {
+        echo "Building Docker image: ${dockerImage}"
 
-    // הפעלת ה-Pipeline בתוך הקונטיינר שנבנה:
-    docker.image("${DOCKER_IMAGE_NAME}").withRun('-u 0:0 --privileged -e VERSION=1.2.0 -l zip-job-docker') {
-
-        // --- שלבים בתוך הקונטיינר ---
-
-        stage('Build Stage') {
-            echo "Starting build stage: executing zip_job.py..."
-            // 3b. Build stage should execute the zip_job.py
-            // הפקודה מריצה את הסקריפט מתוך התיקייה Final_hw
-            // הסקריפט יוצר את קבצי ה-zip באותה תיקייה
-            bat "python3 ./${PROJECT_DIRECTORY}/zip_job.py"
-            echo "zip files created successfully in ${PROJECT_DIRECTORY}."
-        }
-
-        stage('Publish Stage') {
-            echo "Publishing artifacts to Artifactory at ${REPO_TO_UPLOAD}..."
-
-            // הגדרת ה-Artifactory Server באמצעות ה-ID שמוגדר במערכת
-            def server = Artifactory.server ARTIFACTORY_SERVER_ID
-
-            // 3c. Publish stage should upload all the zip files created
-            def buildInfo = server.upload(
-                repo: REPO_TO_UPLOAD,
-                spec: """{
-                    "files": [
-                        {
-                            "pattern": "${PROJECT_DIRECTORY}/*.zip", // מעלה את כל קבצי ה-zip שנוצרו
-                            "target": "/"
-                        }
-                    ]
-                }"""
-            )
-
-            // פרסום מידע ה-Build
-            buildInfo.env.capture = true
-            server.publishBuildInfo buildInfo
-
-            echo "Artifacts successfully published."
-        }
-
-        // --- סוף שלבים בתוך הקונטיינר ---
+        bat """
+        cd "%WORKSPACE%"
+        docker build -t ${dockerImage} .
+        """
     }
 
-    // --- שלבים מחוץ לקונטיינר ---
+    // -------------------------
+    // Stage 3: Run Python Script in Docker
+    // -------------------------
+    stage('Run zip_job.py') {
+        echo "Running Python script inside container..."
 
-    stage('Report Stage') {
-        // 3d. Report stage - send email with job status
-        echo "Attempting to send email notification..."
+        bat """
+        docker run --rm ^
+            -e VERSION=${version} ^
+            -v "%WORKSPACE%":/app ^
+            -w /app ^
+            ${dockerImage} python3 /tmp/zip_job.py
+        """
 
-        // הערה: נדרש פלאגין Email Extension והגדרת SMTP ב-Jenkins
-        mail (
-            to: 'your.email@example.com', // החלף לכתובת דוא"ל רלוונטית
-            subject: "Jenkins Job ${JOB_NAME} Build #${BUILD_NUMBER}: ${currentBuild.result}",
-            body: "The Pipeline ${JOB_NAME} finished with status ${currentBuild.result}."
+        bat "dir *.zip"
+    }
+
+    // -------------------------
+    // Stage 4: Upload Artifacts
+    // -------------------------
+    stage('Publish Artifacts to Artifactory') {
+        echo "Uploading artifacts to Artifactory..."
+
+        def server = Artifactory.server artifactoryServer
+        def buildInfo = Artifactory.newBuildInfo()
+
+        server.upload(
+            spec: """{
+                "files": [
+                    {
+                        "pattern": "*.zip",
+                        "target": "${repoTarget}"
+                    }
+                ]
+            }""",
+            buildInfo: buildInfo
         )
-        echo "Email sent."
+
+        server.publishBuildInfo(buildInfo)
     }
 
-    stage('Cleanup Stage') {
-        // 3e. Cleanup stage - delete the workspace
-        echo "Cleaning up workspace..."
-        deleteDir() // מוחק את תיקיית ה-Workspace
-        echo "Workspace deleted."
+    // -------------------------
+    // Stage 5: Cleanup
+    // -------------------------
+    stage('Cleanup Workspace') {
+        cleanWs()
+    }
+
+    // -------------------------
+    // Stage 6: Email Report
+    // -------------------------
+    stage('Report') {
+        def status = currentBuild.currentResult
+
+        mail(
+            to: 'amirmalka26@gmail.com',
+            subject: "Job ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${status}",
+            body: "Pipeline result: ${status}\nConsole: ${env.BUILD_URL}console"
+        )
     }
 }
