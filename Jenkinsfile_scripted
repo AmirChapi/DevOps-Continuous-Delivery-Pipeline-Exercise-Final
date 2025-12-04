@@ -2,7 +2,7 @@
 def dockerImage      = 'zip-job-test'
 def version          = '1.2.0'
 def repoTarget       = "binary-storage/${version}/"
-def artifactoryUrl   = 'https://localhost:8081/artifactory'
+def artifactoryUrl   = 'https://artifactory-tlv/artifactory'
 def artifactoryCreds = 'artifactory-super-user'  // <-- לשים פה את ה-Credentials ID האמיתי שלך
 
 node('built-in') {
