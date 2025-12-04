@@ -1,71 +1,56 @@
-// ================================
-// Declarative Pipeline - Groovy
-// ================================
-
 pipeline {
 
-    agent none
+    agent { label 'built-in' }
 
     environment {
-        VERSION = "1.2.0"
-        IMAGE_NAME = "zip-job-test"
-        ARTIFACTORY_SERVER = "artifactory-tlv"
-        ARTIFACT_REPO = "binary-storage/${VERSION}/"
+        VERSION            = '1.2.0'
+        DOCKER_IMAGE       = 'zip-job-test'
+        ARTIFACTORY_SERVER = 'artifactory-tlv'
+        ARTIFACTORY_REPO   = 'binary-storage'
+    }
+
+    options {
+        skipDefaultCheckout(true)
     }
 
     stages {
 
-        // Checkout
         stage('Checkout') {
-            agent { node { label 'built-in' } }
-
             steps {
                 checkout scm
-                echo "Repository checked out."
+                echo "Checked out repository into workspace."
             }
         }
 
-        // Build Docker Image
         stage('Build Docker Image') {
-            agent { node { label 'built-in' } }
-
             steps {
-                echo "Building Docker image..."
-
+                echo "Building Docker image: ${env.DOCKER_IMAGE}"
                 bat """
-                docker build -t %IMAGE_NAME% .
+                    cd "%WORKSPACE%"
+                    docker build -t ${DOCKER_IMAGE} .
                 """
             }
         }
 
-        // Run Python inside container
-        stage('Run Python Script') {
-            agent { node { label 'built-in' } }
-
+        stage('Run zip_job.py') {
             steps {
-                echo "Running zip_job.py inside container"
-
+                echo "Running zip_job.py inside Docker container..."
                 bat """
-                docker run --rm ^
-                    -e VERSION=%VERSION% ^
-                    -v "%WORKSPACE%":/app ^
-                    -w /app ^
-                    %IMAGE_NAME% python3 /tmp/zip_job.py
+                    docker run --rm ^
+                        -e VERSION=${VERSION} ^
+                        -v "%WORKSPACE%":/app ^
+                        -w /app ^
+                        ${DOCKER_IMAGE} python3 /tmp/zip_job.py
                 """
-
                 bat "dir *.zip"
             }
         }
 
-        // Publish to Artifactory
-        stage('Publish Artifacts') {
-            agent { node { label 'built-in' } }
-
+        stage('Publish Artifacts to Artifactory') {
             steps {
+                echo "Uploading artifacts to Artifactory..."
                 script {
-                    echo "Uploading ZIP files to Artifactory..."
-
-                    def server = Artifactory.server(ARTIFACTORY_SERVER)
+                    def server    = Artifactory.server(ARTIFACTORY_SERVER)
                     def buildInfo = Artifactory.newBuildInfo()
 
                     server.upload(
@@ -73,7 +58,7 @@ pipeline {
                             "files": [
                                 {
                                     "pattern": "*.zip",
-                                    "target": "${ARTIFACT_REPO}"
+                                    "target": "${ARTIFACTORY_REPO}/${VERSION}/"
                                 }
                             ]
                         }""",
@@ -84,25 +69,25 @@ pipeline {
                 }
             }
         }
-    }
 
-    post {
-        always {
-            node('built-in') {
+        stage('Cleanup Workspace') {
+            steps {
                 cleanWs()
             }
         }
 
-        success {
-            mail(
-                to: 'amirmalka26@gmail.com',
-                subject: "Job ${env.JOB_NAME} SUCCESS",
-                body: "Pipeline completed successfully."
-            )
-        }
-
-        failure {
-            echo "Pipeline failed."
+        stage('Report') {
+            steps {
+                script {
+                    def status = currentBuild.currentResult
+                    mail(
+                        to: 'amirmalka26@gmail.com',
+                        subject: "Job ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${status}",
+                        body: """Pipeline result: ${status}
+Console: ${env.BUILD_URL}console"""
+                    )
+                }
+            }
         }
     }
 }
