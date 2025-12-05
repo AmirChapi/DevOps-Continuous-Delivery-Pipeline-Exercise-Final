@@ -40,7 +40,7 @@ finally:
         if os.path.exists(f):
             os.remove(f)
 
-# --- תקלה יזומה: מוחקים בכוונה ZIP אחד ---
+#תקלה יזומה
 #bad_file = f"c_{version}.zip"
 #if os.path.exists(bad_file):
 #   os.remove(bad_file)
