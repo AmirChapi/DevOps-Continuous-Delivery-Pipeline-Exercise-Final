@@ -46,10 +46,10 @@ finally:
             os.remove(f)
 
 # --- תקלה יזומה: מוחקים בכוונה ZIP אחד ---
-bad_file = f"c_{version}.zip"
-if os.path.exists(bad_file):
-    os.remove(bad_file)
-    print(f"Simulated error: Deleted {bad_file}")
+#bad_file = f"c_{version}.zip"
+#if os.path.exists(bad_file):
+#   os.remove(bad_file)
+#   print(f"Simulated error: Deleted {bad_file}")
 
 # שלב 3 - ולידציה: בודקים שכל קבצי ה-ZIP קיימים
 expected_zip_files = [f"{name}_{version}.zip" for name in base_names]
