@@ -2,16 +2,13 @@ import os
 import zipfile
 import sys
 
-# שמות הקבצים הבסיסיים
 base_names = ['a', 'b', 'c', 'd']
 
-# גרסה מגיעה מה-ENV (כמו ב-Jenkins)
 version = os.environ.get('VERSION', '1.0.0')
 
 created_txt_files = []
 created_zip_files = []
 
-# שלב 1 - יצירת קבצי TXT
 try:
     for name in base_names:
         txt_file = f"{name}.txt"
@@ -24,7 +21,6 @@ except Exception as e:
     print(f"FAILURE: Could not create text files: {e}")
     sys.exit(1)
 
-# שלב 2 - יצירת קבצי ZIP
 try:
     for name in base_names:
         txt_file = f"{name}.txt"
@@ -40,7 +36,6 @@ except Exception as e:
     print(f"FAILURE: Could not create zip files: {e}")
     sys.exit(1)
 finally:
-    # מוחקים את קבצי ה-TXT, כי כבר ארזנו אותם
     for f in created_txt_files:
         if os.path.exists(f):
             os.remove(f)
@@ -51,7 +46,6 @@ finally:
 #   os.remove(bad_file)
 #   print(f"Simulated error: Deleted {bad_file}")
 
-# שלב 3 - ולידציה: בודקים שכל קבצי ה-ZIP קיימים
 expected_zip_files = [f"{name}_{version}.zip" for name in base_names]
 missing_files = [f for f in expected_zip_files if not os.path.exists(f)]
 
